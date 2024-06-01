@@ -95,7 +95,7 @@ class Expression:
             self.update()
 
     def create_RPN(self) -> list:
-        ''' Produces a RPN (Reverse Polist Notation) from the current expression 
+        ''' Produces a RPN (Reverse Polish Notation) from the current expression 
             Algorithm used -> https://en.wikipedia.org/wiki/Shunting_yard_algorithm '''
         output = []
         operator_stack = []
