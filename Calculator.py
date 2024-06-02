@@ -1,7 +1,6 @@
 import pygame as pg
 from math import e, pi, sin, cos, asin, acos, log
 
-
 class OperatorSetting:
     ''' Class handling all operators (+,-...) and their priority '''
 
@@ -31,6 +30,7 @@ class Expression:
         'ln': log}
     CONSTANTS = {'eu': e, 'pi': pi}
     MAX_STACK_LEN = 50
+    fonts = []
 
     def __init__(
             self,
@@ -52,10 +52,14 @@ class Expression:
         self.expression = []
         self.expression_stack = []
         self.cursor_pointer = 0
+
         self.font_size = font_size
+        self.fonts = [None for i in range(200)]
+        for i in range(200):
+            self.fonts[i] = pg.font.Font(font_path, i)
+        self.font = self.fonts[font_size]
 
         self.prev_expression = None
-        self.font = pg.font.Font(font_path, font_size)
         self.update()
 
         self.last_cursor_tick = pg.time.get_ticks()
@@ -288,7 +292,7 @@ class Expression:
 
         # Make font smaller while it doesnt fit
         while self.text_rect.width > self.rect.width or self.text_rect.height >= self.rect.height / 2.1:
-            self.font = pg.font.Font(FONT_PATH, self.font_size - 1)
+            self.font = self.fonts[self.font_size - 1]
             self.font_size -= 1
             self.text_surf = self.font.render(''.join(
                 [('e' if s == 'eu' else s) for s in self.expression]) + ' ', True, TEXT_COLOR)
@@ -296,7 +300,7 @@ class Expression:
 
         # Make font bigger while it fits
         while True:
-            new_font = pg.font.Font(FONT_PATH, self.font_size + 1)
+            new_font = self.fonts[self.font_size + 1]
             if (new_font.size(''.join([('e' if s == 'eu' else s) for s in self.expression]) + ' ')[0] >= self.rect.width 
                     or new_font.size('1')[1] >= self.rect.height / 2.1):
                 break
@@ -352,7 +356,7 @@ class Button:
 
         # Make font smaller to fit
         while True:
-            self.font = pg.font.Font(font_path, font_size)
+            self.font = self.expression.fonts[font_size]
             self.text_surf = self.font.render(self.name, True, TEXT_COLOR)
             self.text_rect = self.text_surf.get_rect()
             if (self.text_rect.height >= self.size[1] / 2 
@@ -597,7 +601,7 @@ name_to_button['e'] = [b for b in buttons if b.name == 'e'][0]
 name_to_button['pi'] = [b for b in buttons if b.name == 'pi'][0]
 
 current_string = ''
-pg.key.set_repeat(500, 35)
+pg.key.set_repeat(500, 30)
 
 while app_running:
     clock.tick(60)
