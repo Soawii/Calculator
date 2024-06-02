@@ -30,6 +30,7 @@ class Expression:
         'cos': cos,
         'ln': log}
     CONSTANTS = {'eu': e, 'pi': pi}
+    MAX_STACK_LEN = 50
 
     def __init__(
             self,
@@ -49,6 +50,7 @@ class Expression:
         self.BORDER_WIDTH = BORDER_WIDTH
 
         self.expression = []
+        self.expression_stack = []
         self.cursor_pointer = 0
         self.font_size = font_size
 
@@ -62,10 +64,18 @@ class Expression:
         self.error_tick = 0
         self.error_time = 2000
 
+
     def resize(self, height: int, top: int) -> None:
         ''' Resize the expression after the window has been resized '''
         self.rect = pg.Rect(SPACE, top, WIDTH - SPACE * 2, height)
         self.update()
+
+
+    def add_to_stack(self):
+        self.expression_stack.append((self.expression.copy(), self.cursor_pointer))
+        if len(self.expression_stack) > self.MAX_STACK_LEN:
+            self.expression_stack.pop(0)
+
 
     def add_char(self, char_pressed: str) -> None:
         ''' Add chosen sequence to the expression at the cursor pointer '''
@@ -80,19 +90,24 @@ class Expression:
                 return
         if char_pressed == '.' and self.cursor_pointer > 0 and self.expression[self.cursor_pointer - 1] == '.':
             return
+        self.add_to_stack()
         self.expression.insert(self.cursor_pointer, char_pressed)
         self.cursor_pointer += 1
         self.update()
 
+
     def delete_char(self, to_the_left: bool) -> None:
         ''' Delete sequence from the expression at the cursor pointer '''
         if to_the_left and self.cursor_pointer > 0:
+            self.add_to_stack()
             self.expression.pop(self.cursor_pointer - 1)
             self.cursor_pointer -= 1
             self.update()
         if not to_the_left and self.cursor_pointer < len(self.expression):
+            self.add_to_stack()
             self.expression.pop(self.cursor_pointer)
             self.update()
+
 
     def create_RPN(self) -> list:
         ''' Produces a RPN (Reverse Polish Notation) from the current expression 
@@ -142,9 +157,8 @@ class Expression:
             for constant in self.CONSTANTS:
                 if self.expression[i] == constant:
                     constant_placed = True
-                    temp = list(str(self.CONSTANTS[constant]))
-                    self.expression = self.expression[0:i] + \
-                                    temp + self.expression[i + 1:]
+                    output.append(self.CONSTANTS[constant])
+                    i += 1
                     break
             if constant_placed:
                 continue
@@ -202,42 +216,41 @@ class Expression:
             new_value = (-1.0 if output[1].name == '-' else 1.0) * output[0]
             output.pop(0)
             output[0] = new_value
+    
         return output
 
-    def evaluate_expression(self) -> float:
-        ''' Turns an RPN to a number '''
+
+    def evaluate_RPN(self) -> float:
+        ''' Turns a RPN to a number '''
         RPN = self.create_RPN()
 
-        i = len(RPN) - 1
-        while i >= 1:
-            if (i >= 2 and isinstance(RPN[i], OperatorSetting)
-                    and isinstance(RPN[i - 1], (int, float)) 
-                    and isinstance(RPN[i - 2], (int, float))):
-                new_value = float(RPN[i].function(RPN[i - 2], RPN[i - 1]))
-                RPN.pop(i)
-                RPN.pop(i - 1)
-                RPN.pop(i - 2)
-                RPN.insert(i - 2, new_value)
-                i = min(i, len(RPN) - 1)
-            elif (isinstance(RPN[i], str)
-                    and isinstance(RPN[i - 1], (int, float))):
-                new_value = float(self.FUNCTIONS[RPN[i]](RPN[i - 1]))
-                RPN.pop(i)
-                RPN.pop(i - 1)
-                RPN.insert(i - 1, new_value)
-                i = min(i, len(RPN) - 1)
+        number_stack = []
+        for n in RPN:
+            if isinstance(n, OperatorSetting):
+                assert len(number_stack) >= 2, 'Invalid expression'
+                left, right = number_stack[-2], number_stack[-1]
+                number_stack.pop()
+                number_stack.pop()
+                number_stack.append(n.function(left, right))
+            elif n in self.FUNCTIONS:
+                assert len(number_stack) >= 1, 'Invalid expression'
+                top = number_stack[-1]
+                number_stack.pop()
+                number_stack.append(self.FUNCTIONS[n](top))
             else:
-                i -= 1
-        assert len(RPN) != 2, "Invalid expression"
-        assert not(len(RPN) == 1 and isinstance(RPN[0], OperatorSetting)), \
-                "Invalid expression"
-        return float(RPN[0])
+                number_stack.append(n)
 
-    def calculate(self) -> (float | None):
+        assert len(number_stack) <= 1, 'Invalid expression'
+        return number_stack[0]
+
+
+    def evaluate_expression(self) -> (float | None):
         ''' Main expression-evaluating function
             Handles errors and updates the main expression list '''
+        if self.prev_expression != None and pg.time.get_ticks() - self.error_tick <= self.error_time:
+            return None
         try:
-            number = round(float(self.evaluate_expression()), 10)
+            number = round(float(self.evaluate_RPN()), 10)
         except Exception as e:
             self.error_tick = pg.time.get_ticks()
             self.prev_expression = self.expression.copy()
@@ -246,6 +259,7 @@ class Expression:
             self.update()
             return None
 
+        self.add_to_stack()
         if (abs(number) >= 1 and abs(number) <= 10 **
                 10) and (number == float(int(number))):
             number = int(number)
@@ -255,6 +269,7 @@ class Expression:
         self.update()
         return number
 
+
     def update_cursor(self) -> None:
         ''' Updates cursors size and position '''
         self.draw_cursor = True
@@ -263,6 +278,7 @@ class Expression:
         self.cursor_rect.centery = self.text_rect.centery - 4
         self.cursor_rect.right = self.text_rect.right - self.font.size(''.join(
             [('e' if s == 'eu' else s) for s in self.expression][self.cursor_pointer:len(self.expression)]) + ' ')[0] + 1
+
 
     def update(self) -> None:
         ''' Updates size and position of main text '''
@@ -293,6 +309,7 @@ class Expression:
         self.text_rect.center = self.rect.center
         self.text_rect.right = self.rect.right
         self.update_cursor()
+
 
     def draw(self) -> None:
         ''' Draws the expression onto the window'''
@@ -351,7 +368,7 @@ class Button:
         if self.name == "BACKSPACE":
             self.expression.delete_char(True)
         elif self.name == '=':
-            self.expression.calculate()
+            self.expression.evaluate_expression()
         elif self.name in ['<', '>']:
             diff = 1 if self.name == '>' else -1
             self.expression.cursor_pointer += diff
@@ -364,19 +381,11 @@ class Button:
             self.expression.expression.clear()
             self.expression.cursor_pointer = 0
             self.expression.update()
-        elif self.name == '+/-':
-            if (len(self.expression.expression) >= 3 and
-                    self.expression.expression[0]
-                    + self.expression.expression[1]
-                    + self.expression.expression[-1] == '-()'):
-                self.expression.expression.pop(0)
-                self.expression.expression.pop(0)
-                self.expression.expression.pop()
-            elif len(self.expression.expression) > 0:
-                self.expression.expression.insert(0, '(')
-                self.expression.expression.insert(0, '-')
-                self.expression.expression.append(')')
-            self.expression.cursor_pointer = len(self.expression.expression)
+        elif self.name == 'undo':
+            if len(self.expression.expression_stack) == 0:
+                return
+            self.expression.expression, self.expression.cursor_pointer = self.expression.expression_stack[-1][0].copy(), self.expression.expression_stack[-1][1]
+            self.expression.expression_stack.pop() 
             self.expression.update()
         elif self.name == 'x^2':
             self.expression.expression.insert(0, '(')
@@ -397,6 +406,7 @@ class Button:
 
         pressed_button = None
 
+
     def update(self,
                 mouse_pos: tuple, mouse_pressed: bool,
                 mouse_pressed_this_frame: bool,
@@ -415,6 +425,7 @@ class Button:
                 self.CURRENT_COLOR = self.PRESSED_COLOR
         else:
             self.CURRENT_COLOR = self.HOVERED_COLOR
+
 
     def draw(self):
         pg.draw.rect(screen, self.CURRENT_COLOR, self.rect, 0, 5)
@@ -468,7 +479,7 @@ def create_buttons():
                               FONT_PATH,
                               16))
 
-    for i, name in enumerate(['+/-', '0', '.', '=']):
+    for i, name in enumerate(['undo', '0', '.', '=']):
         buttons.append(Button(NUMBER_BUTTON_SIZE,
                               (SPACE * (i + 2) + NUMBER_BUTTON_SIZE[0] * (i + 1),
                                HEIGHT - NUMBER_BUTTON_SIZE[1] - SPACE),
@@ -479,7 +490,7 @@ def create_buttons():
                               name,
                               expression,
                               FONT_PATH,
-                              24))
+                              20 if i == 0 else 24))
 
     for i, name in enumerate(['<', '>', 'C', 'BACKSPACE']):
         buttons.append(Button(BUTTON_SIZE,
@@ -506,6 +517,7 @@ def create_buttons():
                 expression,
                 FONT_PATH,
                 20))
+
 
 
 pg.init()
@@ -618,6 +630,8 @@ while app_running:
                     key_to_button[event.key].press()
                 elif event.key == pg.K_DELETE:
                     expression.delete_char(False)
+                elif event.key == pg.K_z:
+                    [b for b in buttons if b.name == 'undo'][0].press()
             current_string += event.unicode
             for name in name_to_button:
                 if current_string.endswith(name):
@@ -640,11 +654,11 @@ while app_running:
                 (NUMBER_BUTTON_SIZE[1] * 3 - SPACE) // 4)
             create_buttons()
 
+    expression.draw()
     for b in buttons:
         b.update(mouse_pos, mouse_pressed,
                  mouse_pressed_this_frame,
                  mouse_released_this_frame)
         b.draw()
-    expression.draw()
 
     pg.display.flip()
