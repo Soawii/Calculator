@@ -1,5 +1,5 @@
 import pygame as pg
-from math import e, pi, sin, cos, asin, acos, log
+from math import e, pi, sin, cos, asin, acos, log, isinf
 
 class OperatorSetting:
     ''' Class handling all operators (+,-...) and their priority '''
@@ -35,8 +35,8 @@ class Expression:
     def __init__(
             self,
             height: int, top: int,
-            BACKGROUND_COLOR: pg.Color, TEXT_COLOR: pg.Color,
-            BORDER_COLOR: pg.Color, CURSOR_COLOR: pg.Color,
+            BACKGROUND_COLOR: pg.Color, TEXT_COLOR: pg.Color, SMALL_TEXT_COLOR: pg.Color,
+            BORDER_COLOR: pg.Color, CURSOR_COLOR: pg.Color, 
             BORDER_WIDTH: int,
             font_path: str, font_size: int,
             cursor_tick_time: int):
@@ -48,6 +48,7 @@ class Expression:
         self.BORDER_COLOR = BORDER_COLOR
         self.CURSOR_COLOR = CURSOR_COLOR
         self.BORDER_WIDTH = BORDER_WIDTH
+        self.SMALL_TEXT_COLOR = SMALL_TEXT_COLOR
 
         self.expression = []
         self.expression_stack = []
@@ -60,7 +61,8 @@ class Expression:
         self.font = self.fonts[font_size]
 
         self.prev_expression = None
-        self.update()
+        self.precalculated_expression = None
+        self.resize(height, top)
 
         self.last_cursor_tick = pg.time.get_ticks()
         self.cursor_tick_time = cursor_tick_time
@@ -72,6 +74,7 @@ class Expression:
     def resize(self, height: int, top: int) -> None:
         ''' Resize the expression after the window has been resized '''
         self.rect = pg.Rect(SPACE, top, WIDTH - SPACE * 2, height)
+        self.small_font = self.fonts[round(height / 4)]
         self.update()
 
 
@@ -136,7 +139,7 @@ class Expression:
                 while i < len(self.expression) and self.expression[i].isdigit():
                     i += 1
                 if i < len(self.expression) and self.expression[i] == '.':
-                    assert not starting_width_dot, "Invalid expression"
+                    assert not starting_width_dot, "invalid expression"
                     i += 1
                     while i < len(
                             self.expression) and self.expression[i].isdigit():
@@ -175,7 +178,7 @@ class Expression:
                     i += 1
                     if i >= len(self.expression) or self.expression[i] != '(':
                         raise AssertionError(
-                            "Parentheses after a function absent")
+                            "parentheses after a function absent")
                     break
             if function_placed:
                 continue
@@ -198,7 +201,7 @@ class Expression:
                     output.append(operator_stack[-1])
                     operator_stack.pop()
                 assert len(
-                    operator_stack) > 0, "Parentheses order is not correct"
+                    operator_stack) > 0, "parentheses out of order"
                 operator_stack.pop()
                 if len(operator_stack) > 0 and operator_stack[-1] in self.FUNCTIONS:
                     output.append(operator_stack[-1])
@@ -209,7 +212,7 @@ class Expression:
 
         while len(operator_stack) > 0:
             assert operator_stack[-1].name not in [
-                '(', ')'], "Parentheses order is not correct."
+                '(', ')'], "parentheses out of order"
             output.append(operator_stack[-1])
             operator_stack.pop()
 
@@ -227,51 +230,59 @@ class Expression:
     def evaluate_RPN(self) -> float:
         ''' Turns a RPN to a number '''
         RPN = self.create_RPN()
-
+        
         number_stack = []
         for n in RPN:
             if isinstance(n, OperatorSetting):
-                assert len(number_stack) >= 2, 'Invalid expression'
+                assert len(number_stack) >= 2, 'invalid expression'
                 left, right = number_stack[-2], number_stack[-1]
                 number_stack.pop()
                 number_stack.pop()
                 number_stack.append(n.function(left, right))
             elif n in self.FUNCTIONS:
-                assert len(number_stack) >= 1, 'Invalid expression'
+                assert len(number_stack) >= 1, 'invalid expression'
                 top = number_stack[-1]
                 number_stack.pop()
                 number_stack.append(self.FUNCTIONS[n](top))
             else:
                 number_stack.append(n)
 
-        assert len(number_stack) <= 1, 'Invalid expression'
+        assert len(number_stack) == 1, 'invalid expression'
         return number_stack[0]
 
-
-    def evaluate_expression(self) -> (float | None):
-        ''' Main expression-evaluating function
-            Handles errors and updates the main expression list '''
+    def evaluate_expression_result(self) -> (float | None):
+        ''' Helper expression-evaluating function
+            Used for desplaying pre-calculated result in the bottom '''
         if self.prev_expression != None and pg.time.get_ticks() - self.error_tick <= self.error_time:
             return None
         try:
             number = round(float(self.evaluate_RPN()), 10)
+            assert not isinf(number), 'number is too big'
+
         except Exception as e:
-            self.error_tick = pg.time.get_ticks()
+            return list(' '.join([str(a) for a in e.args]))
+
+        if (abs(number) <= 10 ** 15) and (number == float(int(number))):
+            number = int(number)
+        return number
+
+    def evaluate_expression(self) -> (float | None):
+        ''' Main expression-evaluating function
+            Handles errors and updates the main expression list '''
+        result = self.evaluate_expression_result()
+        if isinstance(result, list):
             self.prev_expression = self.expression.copy()
-            self.expression = list(' '.join([str(a) for a in e.args]))
+            self.error_tick = pg.time.get_ticks()
+            self.expression = result
             self.cursor_pointer = len(self.expression)
             self.update()
             return None
-
         self.add_to_stack()
-        if (abs(number) >= 1 and abs(number) <= 10 **
-                10) and (number == float(int(number))):
-            number = int(number)
-        self.expression = list(str(number))
-
+        self.expression = list(str(result))
         self.cursor_pointer = len(self.expression)
         self.update()
-        return number
+        self.precalculated_expression = None
+        return result
 
 
     def update_cursor(self) -> None:
@@ -310,8 +321,20 @@ class Expression:
                 [('e' if s == 'eu' else s) for s in self.expression]) + ' ', True, TEXT_COLOR)
             self.text_rect = self.text_surf.get_rect()
 
+        calc = self.evaluate_expression_result()
+        if calc != None:
+            calc = None if isinstance(calc, list) else list(str(calc))
+        self.precalculated_expression = calc
+        if calc != None:
+            self.precalculated_surf = self.small_font.render(''.join(self.precalculated_expression) + ' ', True, self.SMALL_TEXT_COLOR)
+            self.precalculated_rect = self.precalculated_surf.get_rect()
+
         self.text_rect.center = self.rect.center
         self.text_rect.right = self.rect.right
+        if calc != None:
+            self.precalculated_rect.right = self.text_rect.right
+            self.precalculated_rect.centery = self.rect.bottom - self.rect.height // 7
+
         self.update_cursor()
 
 
@@ -335,6 +358,8 @@ class Expression:
         pg.draw.rect(screen, self.BACKGROUND_COLOR, self.rect, 0, 5)
         pg.draw.rect(screen, self.BORDER_COLOR, self.rect, self.BORDER_WIDTH, 5)
         screen.blit(self.text_surf, self.text_rect)
+        if self.precalculated_expression != None:
+            screen.blit(self.precalculated_surf, self.precalculated_rect)
         if self.draw_cursor:
             pg.draw.rect(screen, self.CURSOR_COLOR, self.cursor_rect, 0)
 
@@ -552,6 +577,7 @@ expression = Expression(
     SPACE,
     NORMAL_BUTTON_COLOR,
     TEXT_COLOR,
+    pg.Color(200, 200, 200),
     BORDER_BUTTON_COLOR,
     CURSOR_COLOR,
     2,
