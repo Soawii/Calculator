@@ -121,48 +121,49 @@ class Expression:
             Algorithm used -> https://en.wikipedia.org/wiki/Shunting_yard_algorithm '''
         output = []
         operator_stack = []
-        if len(self.expression) > 0 and self.expression[0] == '-':
+        expression = self.expression.copy()
+
+        if len(expression) > 0 and expression[0] == '-':
             output.append(0)
         i = 0
-        while i < len(self.expression):
-            if ((i > 0) and (self.expression[i - 1] not in self.OPERATORS)
-                    and (self.expression[i - 1] != '(') and (self.expression[i] not in self.OPERATORS)
-                    and not (self.expression[i] == '(' and self.expression[i - 1] in self.FUNCTIONS)
-                    and (self.expression[i] != ')')
-                    and not (self.expression[i] == '.' and (self.expression[i - 1].isdigit() or self.expression[i - 1] == '.'))):
-                self.expression.insert(i, '*')
+        while i < len(expression):
+            if ((i > 0) and (expression[i - 1] not in self.OPERATORS)
+                    and (expression[i - 1] != '(') and (expression[i] not in self.OPERATORS)
+                    and not (expression[i] == '(' and expression[i - 1] in self.FUNCTIONS)
+                    and (expression[i] != ')')
+                    and not (expression[i] == '.' and (expression[i - 1].isdigit() or expression[i - 1] == '.'))):
+                expression.insert(i, '*')
                 continue
-            if self.expression[i].isdigit() or self.expression[i] == '.':
-                starting_width_dot = self.expression[i] == '.'
+            if expression[i].isdigit() or expression[i] == '.':
+                starting_width_dot = expression[i] == '.'
                 left = i
                 i += 1
-                while i < len(self.expression) and self.expression[i].isdigit():
+                while i < len(expression) and expression[i].isdigit():
                     i += 1
-                if i < len(self.expression) and self.expression[i] == '.':
+                if i < len(expression) and expression[i] == '.':
                     assert not starting_width_dot, "invalid expression"
                     i += 1
-                    while i < len(
-                            self.expression) and self.expression[i].isdigit():
+                    while i < len(expression) and expression[i].isdigit():
                         i += 1
                 number = 0
-                if i < len(self.expression) and self.expression[i] == 'e':
+                if i < len(expression) and expression[i] == 'e':
                     right = i + 1
                     j = i + 1
-                    if j < len(self.expression) and self.expression[j] in ['-', '+']:
+                    if j < len(expression) and expression[j] in ['-', '+']:
                         j += 1
-                    while j < len(self.expression) and self.expression[j].isdigit():
+                    while j < len(expression) and expression[j].isdigit():
                         j += 1
                     number = float(''.join(
-                        self.expression[left:i])) * 10 ** float(''.join(self.expression[right:j]))
+                        expression[left:i])) * 10 ** float(''.join(expression[right:j]))
                     i = j
                 else:
-                    number = float(''.join(self.expression[left: i]))
+                    number = float(''.join(expression[left: i]))
                 output.append(number)
                 continue
 
             constant_placed = False
             for constant in self.CONSTANTS:
-                if self.expression[i] == constant:
+                if expression[i] == constant:
                     constant_placed = True
                     output.append(self.CONSTANTS[constant])
                     i += 1
@@ -172,19 +173,19 @@ class Expression:
 
             function_placed = False
             for function in self.FUNCTIONS:
-                if self.expression[i] == function:
+                if expression[i] == function:
                     function_placed = True
                     operator_stack.append(function)
                     i += 1
-                    if i >= len(self.expression) or self.expression[i] != '(':
+                    if i >= len(expression) or expression[i] != '(':
                         raise AssertionError(
                             "parentheses after a function absent")
                     break
             if function_placed:
                 continue
 
-            if self.expression[i] in self.OPERATORS:
-                setting = self.OPERATORS[self.expression[i]]
+            if expression[i] in self.OPERATORS:
+                setting = self.OPERATORS[expression[i]]
                 while ((len(operator_stack) > 0 and isinstance(operator_stack[-1], OperatorSetting) and operator_stack[-1].name != '(')
                        and ((operator_stack[-1].priority > setting.priority)
                             or (operator_stack[-1].priority == setting.priority
@@ -192,11 +193,11 @@ class Expression:
                     output.append(operator_stack[-1])
                     operator_stack.pop()
                 operator_stack.append(setting)
-            elif self.expression[i] == '(':
-                if i + 1 < len(self.expression) and (self.expression[i + 1] in ['-', '+']):
+            elif expression[i] == '(':
+                if i + 1 < len(expression) and (expression[i + 1] in ['-', '+']):
                     output.append(0)
                 operator_stack.append(self.BRACKET_OPERATORS['('])
-            elif self.expression[i] == ')':
+            elif expression[i] == ')':
                 while len(operator_stack) > 0 and operator_stack[-1].name != '(':
                     output.append(operator_stack[-1])
                     operator_stack.pop()
